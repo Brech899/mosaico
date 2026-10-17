@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mosaico de la comunidad</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#e9ecf4; --card:#fff; --ink:#1b1f3b; --mute:#5d6385; --accent:#3d5afe;
+  --err:#c62828; --sk1:#dfe3ef; --sk2:#eef0f7;
+  --display:"Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
+  --body:system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#12142a; --card:#1c1f3d; --ink:#eceefb; --mute:#9aa0c9; --accent:#8aa0ff; --err:#ff8a80; --sk1:#23274a; --sk2:#2c315c}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 var(--body)}
+header{padding:2.5rem 1.25rem 1rem;max-width:1200px;margin:0 auto}
+h1{font:800 clamp(2rem,6vw,3.6rem)/1 var(--display);margin:0 0 .5rem;letter-spacing:-.02em}
+header p{margin:0 0 1.25rem;color:var(--mute);max-width:60ch}
+form{display:flex;flex-wrap:wrap;gap:.6rem}
+input{flex:1 1 260px;padding:.7rem .9rem;border:2px solid transparent;border-radius:10px;background:var(--card);color:var(--ink);font:inherit}
+input.cap{flex:0 1 200px}
+input:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button{font:600 1rem var(--body);border:0;border-radius:10px;padding:.7rem 1.1rem;cursor:pointer;background:var(--accent);color:#fff}
+@media (prefers-color-scheme:dark){button{color:#12142a}}
+button.ghost{background:transparent;color:var(--ink);border:2px solid var(--mute)}
+button:disabled{opacity:.6;cursor:wait}
+#msg{min-height:1.5rem;margin:.6rem 0 0;font-size:.95rem;color:var(--mute)}
+#msg.error{color:var(--err)}
+
+main{max-width:1200px;margin:0 auto;padding:0 1.25rem 3rem}
+#grid{column-width:240px;column-gap:14px}
+.card{
+  position:relative;break-inside:avoid;margin:0 0 14px;border-radius:14px;overflow:hidden;
+  background:var(--card);
+  opacity:0;transform:translateY(-60px) rotate(-2deg);
+  transition:opacity .6s ease, transform .8s cubic-bezier(.2,1.2,.3,1);
+}
+.card.in{opacity:1;transform:none}
+.card.loading{aspect-ratio:4/3;background:linear-gradient(100deg,var(--sk1) 30%,var(--sk2) 50%,var(--sk1) 70%);background-size:300% 100%;animation:shimmer 1.4s infinite linear}
+@keyframes shimmer{from{background-position:100% 0}to{background-position:-100% 0}}
+.card img{display:block;width:100%;height:auto;cursor:zoom-in;
+  opacity:0;filter:blur(16px);transform:scale(1.06);
+  transition:opacity .8s ease, filter .9s ease, transform .9s ease}
+.card img.ready{opacity:1;filter:none;transform:none}
+.card figcaption{padding:.5rem .8rem .7rem;font-size:.9rem}
+.card.broken{padding:1.5rem 1rem;text-align:center;color:var(--mute);animation:none}
+.card.broken img{display:none}
+.x{position:absolute;top:8px;right:8px;width:30px;height:30px;padding:0;border-radius:50%;
+  background:rgba(0,0,0,.6);color:#fff;font-size:1.2rem;line-height:1;opacity:0;transition:opacity .2s}
+.card:hover .x,.x:focus-visible,.card.broken .x{opacity:1}
+@media (hover:none){.x{opacity:1}}
+#empty{text-align:center;color:var(--mute);padding:3rem 1rem}
+dialog{border:0;background:transparent;padding:0;max-width:94vw;max-height:94vh}
+dialog::backdrop{background:rgba(10,12,30,.85)}
+dialog img{display:block;max-width:94vw;max-height:90vh;border-radius:10px}
+
+@media (prefers-reduced-motion:reduce){
+  .card,.card img{transition:opacity .2s;transform:none;filter:none}
+  .card.loading{animation:none}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Mosaico de la comunidad</h1>
+  <p>Pega el enlace directo de una imagen (termina en .jpg, .png o .webp, o es un enlace “copiar dirección de imagen”) y aparecerá en el mosaico.</p>
+  <form id="form">
+    <input id="url" type="url" required placeholder="https://ejemplo.com/foto.jpg" aria-label="Enlace de la imagen">
+    <input id="cap" class="cap" type="text" maxlength="80" placeholder="Título (opcional)" aria-label="Título">
+    <button id="add" type="submit">Agregar imagen</button>
+  </form>
+  <p id="msg" role="status" aria-live="polite"></p>
+</header>
+<main>
+  <div id="grid"></div>
+  <p id="empty" hidden>Todavía no hay imágenes. Pega un enlace arriba para agregar la primera.</p>
+</main>
+<dialog id="lb"><img alt=""></dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+// ---------- Conexión con Supabase ----------
+// Pega aquí los dos datos de tu proyecto (Project Settings → API Keys).
+// La clave "publishable" es pública por diseño: la seguridad la dan las reglas de la base de datos.
+// NUNCA pegues aquí la clave "secret" ni la "service_role".
+const SUPABASE_URL = "https://hnnlkifizrthhzexycet.supabase.co/rest/v1/";      // https://xxxx.supabase.co
+const SUPABASE_KEY = "sb_publishable_E5ilw2hs-XDsgguyRmU3IA__PaFBk11";  // empieza con sb_publishable_
+const configured = !SUPABASE_URL.startsWith("PEGA") && !SUPABASE_KEY.startsWith("PEGA");
+const db = configured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+let items = [];   // [{url, caption}]
+const grid = document.getElementById("grid");
+const msg = document.getElementById("msg");
+const empty = document.getElementById("empty");
+
+function say(text, isError) { msg.textContent = text; msg.className = isError ? "error" : ""; }
+
+// ---------- Animación de caída: cada tarjeta cae al entrar en pantalla ----------
+const io = new IntersectionObserver(entries => {
+  entries.filter(e => e.isIntersecting).forEach((e, i) => {
+    e.target.style.transitionDelay = (i * 80) + "ms";
+    e.target.classList.add("in");
+    io.unobserve(e.target);
+  });
+}, { threshold: 0.05 });
+
+function makeCard(item) {
+  const card = document.createElement("figure");
+  card.className = "card loading";
+
+  const img = document.createElement("img");
+  img.alt = item.caption || "Imagen de la comunidad";
+  img.referrerPolicy = "no-referrer";   // evita que algunos sitios bloqueen la imagen
+  img.loading = "lazy";
+  img.onload = () => { card.classList.remove("loading"); requestAnimationFrame(() => img.classList.add("ready")); };
+  img.onerror = () => {
+    card.className = "card broken in";
+    card.insertBefore(Object.assign(document.createElement("p"), { textContent: "Esta imagen ya no está disponible." }), card.firstChild);
+  };
+  img.src = item.url;
+  img.addEventListener("click", () => openLightbox(item));
+  card.append(img);
+
+  if (item.caption) {
+    const cap = document.createElement("figcaption");
+    cap.textContent = item.caption;   // textContent: nunca se interpreta como HTML
+    card.append(cap);
+  }
+
+
+  io.observe(card);
+  return card;
+}
+
+function refreshEmpty() { empty.hidden = items.length > 0; }
+
+function render() {
+  grid.replaceChildren(...items.map(makeCard));
+  refreshEmpty();
+}
+
+// ---------- Validar que la URL sea una imagen que carga ----------
+function checkImage(url) {
+  return new Promise((resolve, reject) => {
+    const probe = new Image();
+    probe.referrerPolicy = "no-referrer";
+    const timer = setTimeout(() => reject(new Error("timeout")), 10000);
+    probe.onload = () => { clearTimeout(timer); resolve(); };
+    probe.onerror = () => { clearTimeout(timer); reject(new Error("error")); };
+    probe.src = url;
+  });
+}
+
+document.getElementById("form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  if (!configured) return say("Falta conectar Supabase: pega tu Project URL y tu Publishable key al inicio del script.", true);
+  const urlInput = document.getElementById("url"), capInput = document.getElementById("cap");
+  const btn = document.getElementById("add");
+  let url;
+  try {
+    url = new URL(urlInput.value.trim());
+    if (!/^https?:$/.test(url.protocol)) throw 0;
+  } catch { return say("Ese enlace no es válido. Debe empezar con http:// o https://", true); }
+  if (items.some(i => i.url === url.href)) return say("Esa imagen ya está en el mosaico.", true);
+
+  btn.disabled = true; say("Comprobando la imagen…");
+  try {
+    await checkImage(url.href);
+  } catch {
+    btn.disabled = false;
+    return say("No se pudo cargar esa imagen. Usa el enlace directo a la imagen (clic derecho → copiar dirección de imagen).", true);
+  }
+  const item = { url: url.href, caption: capInput.value.trim() };
+  const { error } = await db.from("images").insert(item);
+  if (error) {
+    btn.disabled = false;
+    return say(error.code === "23505" ? "Esa imagen ya está en el mosaico." : "No se pudo guardar la imagen. Intenta de nuevo.", true);
+  }
+  items.unshift(item);
+  grid.prepend(makeCard(item)); refreshEmpty();
+  urlInput.value = ""; capInput.value = ""; btn.disabled = false;
+  say("Imagen agregada.");
+});
+
+// ---------- Ver imagen grande ----------
+const lb = document.getElementById("lb");
+function openLightbox(item) { const i = lb.querySelector("img"); i.src = item.url; i.alt = item.caption || ""; lb.showModal(); }
+lb.addEventListener("click", () => lb.close());
+
+(async function init() {
+  if (!configured) { say("Falta conectar Supabase: pega tu Project URL y tu Publishable key al inicio del script.", true); refreshEmpty(); return; }
+  const { data, error } = await db.from("images").select("url, caption").order("created_at", { ascending: false });
+  if (error) { say("No se pudieron cargar las imágenes.", true); return; }
+  items = data; render();
+})();
+</script>
+</body>
+</html>

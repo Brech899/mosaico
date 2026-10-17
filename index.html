@@ -72,7 +72,6 @@ dialog img{display:block;max-width:94vw;max-height:90vh;border-radius:10px}
   <p>Pega el enlace directo de una imagen (termina en .jpg, .png o .webp, o es un enlace “copiar dirección de imagen”) y aparecerá en el mosaico.</p>
   <form id="form">
     <input id="url" type="url" required placeholder="https://ejemplo.com/foto.jpg" aria-label="Enlace de la imagen">
-    <input id="cap" class="cap" type="text" maxlength="80" placeholder="Título (opcional)" aria-label="Título">
     <button id="add" type="submit">Agregar imagen</button>
   </form>
   <p id="msg" role="status" aria-live="polite"></p>
@@ -89,7 +88,7 @@ dialog img{display:block;max-width:94vw;max-height:90vh;border-radius:10px}
 // Pega aquí los dos datos de tu proyecto (Project Settings → API Keys).
 // La clave "publishable" es pública por diseño: la seguridad la dan las reglas de la base de datos.
 // NUNCA pegues aquí la clave "secret" ni la "service_role".
-const SUPABASE_URL = "https://hnnlkifizrthhzexycet.supabase.co/rest/v1/";      // https://xxxx.supabase.co
+const SUPABASE_URL = "https://hnnlkifizrthhzexycet.supabase.co";      // https://xxxx.supabase.co
 const SUPABASE_KEY = "sb_publishable_E5ilw2hs-XDsgguyRmU3IA__PaFBk11";  // empieza con sb_publishable_
 const configured = !SUPABASE_URL.startsWith("PEGA") && !SUPABASE_KEY.startsWith("PEGA");
 const db = configured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -160,7 +159,7 @@ function checkImage(url) {
 document.getElementById("form").addEventListener("submit", async ev => {
   ev.preventDefault();
   if (!configured) return say("Falta conectar Supabase: pega tu Project URL y tu Publishable key al inicio del script.", true);
-  const urlInput = document.getElementById("url"), capInput = document.getElementById("cap");
+  const urlInput = document.getElementById("url");
   const btn = document.getElementById("add");
   let url;
   try {
@@ -176,7 +175,7 @@ document.getElementById("form").addEventListener("submit", async ev => {
     btn.disabled = false;
     return say("No se pudo cargar esa imagen. Usa el enlace directo a la imagen (clic derecho → copiar dirección de imagen).", true);
   }
-  const item = { url: url.href, caption: capInput.value.trim() };
+  const item = { url: url.href };
   const { error } = await db.from("images").insert(item);
   if (error) {
     btn.disabled = false;
@@ -184,7 +183,7 @@ document.getElementById("form").addEventListener("submit", async ev => {
   }
   items.unshift(item);
   grid.prepend(makeCard(item)); refreshEmpty();
-  urlInput.value = ""; capInput.value = ""; btn.disabled = false;
+  urlInput.value = ""; btn.disabled = false;
   say("Imagen agregada.");
 });
 

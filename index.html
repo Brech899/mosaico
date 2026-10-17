@@ -37,7 +37,15 @@ button:disabled{opacity:.6;cursor:wait}
 #msg.error{color:var(--err)}
 
 main{max-width:1200px;margin:0 auto;padding:0 1.25rem 3rem}
-#grid{column-width:240px;column-gap:14px}
+[hidden]{display:none !important}
+#grid{display:flex;gap:14px;align-items:flex-start}
+.col{flex:1;min-width:0}
+#who{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin:0 0 .8rem;color:var(--mute)}
+#who button{padding:.35rem .8rem}
+.by{position:absolute;left:0;right:0;bottom:0;padding:1.6rem .8rem .6rem;color:#fff;font-size:.9rem;
+  background:linear-gradient(transparent,rgba(0,0,0,.8));opacity:0;transition:opacity .25s;pointer-events:none}
+.card:hover .by,.card:focus-within .by{opacity:1}
+@media (hover:none){.by{opacity:1}}
 .card{
   position:relative;break-inside:avoid;margin:0 0 14px;border-radius:14px;overflow:hidden;
   background:var(--card);
@@ -73,13 +81,22 @@ dialog img{display:block;max-width:94vw;max-height:90vh;border-radius:10px}
 <header>
   <h1>Mosaico de Mierdiboys</h1>
   <p>Pega el enlace directo de una imagen (termina en .jpg, .png o .webp, o es un enlace “copiar dirección de imagen”) y aparecerá en el mosaico.</p>
-  <form id="form">
+  <form id="login" hidden>
+    <input id="user" type="text" required minlength="3" maxlength="20" autocomplete="username" placeholder="Usuario (letras, números o _)" aria-label="Usuario">
+    <input id="pass" type="password" required minlength="6" autocomplete="current-password" placeholder="Contraseña (mínimo 6 caracteres)" aria-label="Contraseña">
+    <button id="loginBtn" type="submit">Entrar</button>
+    <button id="signupBtn" class="ghost" type="button">Crear cuenta</button>
+  </form>
+  <div id="who" hidden>Conectado como <strong id="whoName"></strong>
+    <button id="logoutBtn" class="ghost" type="button">Salir</button>
+  </div>
+  <form id="form" hidden>
     <input id="url" type="url" required placeholder="https://ejemplo.com/foto.jpg" aria-label="Enlace de la imagen">
     <button id="add" type="submit">Agregar imagen</button>
   </form>
   <p id="msg" role="status" aria-live="polite"></p>
 </header>
-<main>
+<main hidden>
   <div id="grid"></div>
   <p id="empty" hidden>Todavía no hay imágenes. Pega un enlace arriba para agregar la primera.</p>
 </main>
@@ -96,7 +113,8 @@ const SUPABASE_KEY = "sb_publishable_E5ilw2hs-XDsgguyRmU3IA__PaFBk11";  // empie
 const configured = !SUPABASE_URL.startsWith("PEGA") && !SUPABASE_KEY.startsWith("PEGA");
 const db = configured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
-let items = [];   // [{url, caption}]
+let items = [];   // [{url, username}]
+let cards = [];
 const grid = document.getElementById("grid");
 const msg = document.getElementById("msg");
 const empty = document.getElementById("empty");
@@ -136,14 +154,34 @@ function makeCard(item) {
   }
 
 
+  if (item.username) {
+    card.tabIndex = 0;
+    const by = document.createElement("span");
+    by.className = "by"; by.textContent = "Publicado por " + item.username;
+    card.append(by);
+  }
+
   io.observe(card);
   return card;
 }
 
 function refreshEmpty() { empty.hidden = items.length > 0; }
 
+// Mosaico en columnas repartidas en orden (izquierda → derecha): lo más reciente queda arriba a la izquierda
+let lastCols = 0;
+function layout(force) {
+  const n = Math.max(1, Math.floor((grid.clientWidth + 14) / 254));
+  if (!force && n === lastCols) return;
+  lastCols = n;
+  const cols = Array.from({ length: n }, () => Object.assign(document.createElement("div"), { className: "col" }));
+  cards.forEach((c, i) => cols[i % n].append(c));
+  grid.replaceChildren(...cols);
+}
+window.addEventListener("resize", () => layout());
+
 function render() {
-  grid.replaceChildren(...items.map(makeCard));
+  cards = items.map(makeCard);
+  layout(true);
   refreshEmpty();
 }
 
@@ -179,13 +217,13 @@ document.getElementById("form").addEventListener("submit", async ev => {
     return say("No se pudo cargar esa imagen. Usa el enlace directo a la imagen (clic derecho → copiar dirección de imagen).", true);
   }
   const item = { url: url.href };
-  const { error } = await db.from("images").insert(item);
+  const { data: row, error } = await db.from("images").insert(item).select("url, username").single();
   if (error) {
     btn.disabled = false;
     return say(error.code === "23505" ? "Esa imagen ya está en el mosaico." : "No se pudo guardar la imagen. Intenta de nuevo.", true);
   }
-  items.unshift(item);
-  grid.prepend(makeCard(item)); refreshEmpty();
+  items.unshift(row);
+  cards.unshift(makeCard(row)); layout(true); refreshEmpty();
   urlInput.value = ""; btn.disabled = false;
   say("Imagen agregada.");
 });
@@ -195,11 +233,55 @@ const lb = document.getElementById("lb");
 function openLightbox(item) { const i = lb.querySelector("img"); i.src = item.url; i.alt = item.caption || ""; lb.showModal(); }
 lb.addEventListener("click", () => lb.close());
 
-(async function init() {
-  if (!configured) { say("Falta conectar Supabase: pega tu Project URL y tu Publishable key al inicio del script.", true); refreshEmpty(); return; }
-  const { data, error } = await db.from("images").select("url, caption").order("created_at", { ascending: false });
+// ---------- Sesión con usuario y contraseña ----------
+const loginBox = document.getElementById("login"), whoBox = document.getElementById("who");
+const formEl = document.getElementById("form"), mainEl = document.querySelector("main");
+let loggedIn = false;
+
+// El "usuario" se guarda como un correo ficticio: nunca se envían correos.
+// Supabase rechaza dominios sin registros de correo (MX), por eso se usa uno real.
+// Nunca se envía ningún correo mientras "Confirm email" esté apagado en Supabase.
+const EMAIL_DOMAIN = "gmail.com";
+const userInput = document.getElementById("user"), passInput = document.getElementById("pass");
+
+async function authenticate(kind) {
+  const name = userInput.value.trim().toLowerCase();
+  if (!/^[a-z0-9_]{3,20}$/.test(name)) return say("El usuario debe tener de 3 a 20 caracteres: letras, números o _.", true);
+  if (passInput.value.length < 6) return say("La contraseña debe tener al menos 6 caracteres.", true);
+  const creds = { email: name + "@" + EMAIL_DOMAIN, password: passInput.value };
+  say(kind === "signup" ? "Creando cuenta…" : "Entrando…");
+  const { data, error } = kind === "signup" ? await db.auth.signUp(creds) : await db.auth.signInWithPassword(creds);
+  if (error) {
+    const t = error.message || "";
+    return say(/already registered/i.test(t) ? "Ese usuario ya existe. Elige otro o pulsa Entrar."
+      : /invalid login/i.test(t) ? "Usuario o contraseña incorrectos."
+      : /confirm/i.test(t) ? "Falta desactivar «Confirm email» en Supabase."
+      : "No se pudo completar: " + t, true);
+  }
+  if (!data.session) return say("Falta desactivar «Confirm email» en Supabase.", true);
+  passInput.value = ""; say("");
+}
+loginBox.addEventListener("submit", ev => { ev.preventDefault(); authenticate("login"); });
+document.getElementById("signupBtn").onclick = () => authenticate("signup");
+document.getElementById("logoutBtn").onclick = () => db.auth.signOut();
+
+async function showApp(session) {
+  const on = !!session;
+  loginBox.hidden = on; whoBox.hidden = !on; formEl.hidden = !on; mainEl.hidden = !on;
+  if (!on) { loggedIn = false; items = []; cards = []; grid.replaceChildren(); say(""); return; }
+  if (loggedIn) return;
+  loggedIn = true;
+  document.getElementById("whoName").textContent = (session.user.email || "").split("@")[0];
+  const { data, error } = await db.from("images").select("url, username").order("created_at", { ascending: false });
   if (error) { say("No se pudieron cargar las imágenes.", true); return; }
   items = data; render();
+}
+
+(async function init() {
+  if (!configured) { say("Falta conectar Supabase: pega tu Project URL y tu Publishable key al inicio del script.", true); return; }
+  const { data: { session } } = await db.auth.getSession();
+  showApp(session);
+  db.auth.onAuthStateChange((_event, s) => { setTimeout(() => showApp(s), 0); });
 })();
 </script>
 </body>

@@ -10,15 +10,18 @@
 <style>
 :root{
   --bg:#e9ecf4; --card:#fff; --ink:#1b1f3b; --mute:#5d6385; --accent:#3d5afe;
+  /* Cambia esta URL para elegir otra imagen de fondo */
+  --bg-image:url("https://wallpapers.com/images/featured/meme-laptop-fondo-4ibeouacwvi03rsx.jpg");
+  --bg-tint:rgba(233,236,244,.78);
   --err:#c62828; --sk1:#dfe3ef; --sk2:#eef0f7;
   --display:"Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
   --body:system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 @media (prefers-color-scheme:dark){
-  :root{--bg:#12142a; --card:#1c1f3d; --ink:#eceefb; --mute:#9aa0c9; --accent:#8aa0ff; --err:#ff8a80; --sk1:#23274a; --sk2:#2c315c}
+  :root{--bg:#12142a; --bg-tint:rgba(18,20,42,.76); --card:#1c1f3d; --ink:#eceefb; --mute:#9aa0c9; --accent:#8aa0ff; --err:#ff8a80; --sk1:#23274a; --sk2:#2c315c}
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 var(--body)}
+body{margin:0;background-color:var(--bg);background-image:linear-gradient(var(--bg-tint),var(--bg-tint)),var(--bg-image);background-position:center;background-size:cover;background-attachment:fixed;color:var(--ink);font:16px/1.5 var(--body)}
 header{padding:2.5rem 1.25rem 1rem;max-width:1200px;margin:0 auto}
 h1{font:800 clamp(2rem,6vw,3.6rem)/1 var(--display);margin:0 0 .5rem;letter-spacing:-.02em}
 header p{margin:0 0 1.25rem;color:var(--mute);max-width:60ch}
@@ -68,7 +71,7 @@ dialog img{display:block;max-width:94vw;max-height:90vh;border-radius:10px}
 </head>
 <body>
 <header>
-  <h1>Mosaico de la comunidad</h1>
+  <h1>Mosaico de Mierdiboys</h1>
   <p>Pega el enlace directo de una imagen (termina en .jpg, .png o .webp, o es un enlace “copiar dirección de imagen”) y aparecerá en el mosaico.</p>
   <form id="form">
     <input id="url" type="url" required placeholder="https://ejemplo.com/foto.jpg" aria-label="Enlace de la imagen">
